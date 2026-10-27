@@ -1295,23 +1295,40 @@ Item {
         maskThresholdMin: 0.5
         maskSpreadAtMin: 1.0
       }
-      // Only a strip along the top of the screen is decoded (sourceClipRect):
-      // the whole width, so the pill can grow without a reload, and the
-      // pill's height rounded up; the full screen while the image size is
-      // unknown.
+      // Only a strip along the top of the screen, cut once by
+      // bin/wallpaper-corner and cached on disk: the whole width, so the pill
+      // can grow without a new cut, and the pill's height rounded up. The
+      // shell never decodes the full wallpaper.
+      readonly property real screenW: barWindow.screen ? barWindow.screen.width : 0
+      readonly property real screenH: barWindow.screen ? barWindow.screen.height : 0
+      readonly property real stripH: Math.min(screenH, Math.ceil(barWindow.cutH / 32) * 32)
+      readonly property var crop: root.wallpaperCrop(root.wallpaperSize.width, root.wallpaperSize.height,
+        screenW, screenH, barWindow.screen ? barWindow.screen.devicePixelRatio : 1, Qt.rect(0, 0, screenW, stripH))
+      readonly property string cropKey: crop ? [root.wallpaper, crop.sourceSize.width, crop.sourceSize.height,
+        crop.clip.x, crop.clip.y, crop.clip.width, crop.clip.height].join(" ") : ""
+      property string piece: ""
+      onCropKeyChanged: wallpaperCut.start()
+
+      Process {
+        id: wallpaperCut
+        property bool again: false
+        function start() {
+          var c = cutWallpaper.crop
+          if (!c) return
+          if (running) { again = true; return }
+          command = [Qt.resolvedUrl("bin/wallpaper-corner").toString().replace(/^[a-z]+:\/\//, ""),
+            String(root.wallpaper).replace(/^file:\/\//, ""),
+            c.sourceSize.width, c.sourceSize.height, c.clip.x, c.clip.y, c.clip.width, c.clip.height].map(String)
+          running = true
+        }
+        stdout: StdioCollector { onStreamFinished: { var p = text.trim(); if (p) cutWallpaper.piece = "file://" + p } }
+        onExited: if (again) { again = false; start() }
+      }
+
       Image {
-        readonly property real screenW: barWindow.screen ? barWindow.screen.width : 0
-        readonly property real screenH: barWindow.screen ? barWindow.screen.height : 0
-        readonly property real dpr: barWindow.screen ? barWindow.screen.devicePixelRatio : 1
-        readonly property real stripH: Math.min(screenH, Math.ceil(barWindow.cutH / 32) * 32)
-        readonly property var crop: root.wallpaperCrop(root.wallpaperSize.width, root.wallpaperSize.height,
-          screenW, screenH, dpr, Qt.rect(0, 0, screenW, stripH))
-        width: screenW
-        height: crop ? stripH : screenH
-        source: root.wallpaper
-        fillMode: crop ? Image.Stretch : Image.PreserveAspectCrop
-        sourceSize: crop ? crop.sourceSize : Qt.size(screenW * dpr, 0)
-        sourceClipRect: crop ? crop.clip : Qt.rect(0, 0, 0, 0)
+        width: cutWallpaper.screenW
+        height: cutWallpaper.stripH
+        source: cutWallpaper.piece
         asynchronous: true
         cache: false
         smooth: true
