@@ -92,10 +92,15 @@ Item {
   // (ln -nsf: deleted, then created again): read with its size, and again
   // whenever the link is created anew.
   property size wallpaperSize: Qt.size(0, 0)
+  // OWE plays these on the desktop; the pill plays them too (WallpaperVideo.qml).
+  readonly property bool wallpaperIsVideo: /\.(mp4|webm|mkv|mov|m4v)$/i.test(wallpaper)
   Process {
     id: overlayWallpaper
     command: ["sh", "-c", "p=$(readlink -f \"$1\") && [ -f \"$p\" ] || exit 0; "
-      + "s=$(magick identify -ping -format '%w %h' \"$p[0]\" 2>/dev/null) || s='0 0'; echo \"${s:-0 0} $p\"",
+      + "case $p in *.[mM][pP]4|*.[wW][eE][bB][mM]|*.[mM][kK][vV]|*.[mM][oO][vV]|*.[mM]4[vV]) "
+      + "s=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"$p\" 2>/dev/null | tr , ' ') || s='0 0' ;; "
+      + "*) s=$(magick identify -ping -format '%w %h' \"$p[0]\" 2>/dev/null) || s='0 0' ;; esac; "
+      + "echo \"${s:-0 0} $p\"",
       "sh", root.home + "/.local/state/omarchy/current/background"]
     stdout: StdioCollector {
       onStreamFinished: {
@@ -1307,7 +1312,7 @@ Item {
       readonly property string cropKey: crop ? [root.wallpaper, crop.sourceSize.width, crop.sourceSize.height,
         crop.clip.x, crop.clip.y, crop.clip.width, crop.clip.height].join(" ") : ""
       property string piece: ""
-      onCropKeyChanged: wallpaperCut.start()
+      onCropKeyChanged: if (!root.wallpaperIsVideo) wallpaperCut.start()
 
       Process {
         id: wallpaperCut
@@ -1326,12 +1331,23 @@ Item {
       }
 
       Image {
+        visible: !root.wallpaperIsVideo
         width: cutWallpaper.screenW
         height: cutWallpaper.stripH
-        source: cutWallpaper.piece
+        source: visible ? cutWallpaper.piece : ""
         asynchronous: true
         cache: false
         smooth: true
+      }
+
+      // A video background plays here too, on OWE's clock (WallpaperVideo.qml).
+      WallpaperVideo {
+        width: cutWallpaper.screenW
+        height: cutWallpaper.stripH
+        active: cutWallpaper.visible && root.wallpaperIsVideo
+        source: active ? root.wallpaper : ""
+        crop: cutWallpaper.crop
+        dpr: barWindow.screen ? barWindow.screen.devicePixelRatio : 1
       }
     }
     // Square at the screen's edges, rounded at the inner corner.
