@@ -1230,7 +1230,65 @@ Item {
     // Overlay: input only on the left pill, clicks elsewhere reach the windows.
     property Item overlayItem: null
     mask: root.overlay ? overlayMask : null
-    Region { id: overlayMask; item: barWindow.overlayItem }
+    // While peeking (below), nothing takes input.
+    Region { id: overlayMask; item: barWindow.peeking ? null : barWindow.overlayItem }
+
+    // ---- peek (overlay only), as the minimap does it
+    //
+    // Shift while hovering the pill hides it (input passes straight through,
+    // the pill fades out) so what is under it can be clicked. It comes back
+    // once the pointer leaves the pill's corner; with no input the surface
+    // cannot see that, so the cursor is polled meanwhile.
+    property bool pillHovered: false
+    property bool peeking: false
+    property real veil: peeking ? 0 : 1
+    Behavior on veil { NumberAnimation { duration: 320; easing.type: Easing.InOutCubic } }
+    Binding { target: barWindow.contentItem; property: "opacity"; value: barWindow.veil }
+
+    function peek() {
+      root.tooltipShown = false
+      barWindow.peeking = true
+    }
+
+    // The bar has no keyboard focus, so Qt never sees Shift: ask Hyprland
+    // (xkb keycodes 50 and 62, the two Shifts) while the pointer is on the pill.
+    Timer {
+      interval: 120
+      running: root.overlay && barWindow.pillHovered && !barWindow.peeking
+      repeat: true
+      onTriggered: if (!shiftQuery.running) shiftQuery.running = true
+    }
+    Process {
+      id: shiftQuery
+      command: ["hyprctl", "repl", "return hl.is_key_down(50) or hl.is_key_down(62)"]
+      stdout: StdioCollector {
+        onStreamFinished: if (String(text).trim() === "true" && barWindow.pillHovered) barWindow.peek()
+      }
+    }
+
+    Timer {
+      interval: 150
+      running: barWindow.peeking
+      repeat: true
+      onTriggered: if (!peekCursor.running) peekCursor.running = true
+    }
+    Process {
+      id: peekCursor
+      command: ["hyprctl", "cursorpos", "-j"]
+      stdout: StdioCollector {
+        onStreamFinished: {
+          try {
+            var c = JSON.parse(String(text || "{}"))
+            var m = barWindow.cutMonitor
+            var ox = m ? m.x : (barWindow.screen ? barWindow.screen.x : 0)
+            var oy = m ? m.y : (barWindow.screen ? barWindow.screen.y : 0)
+            var x = c.x - ox, y = c.y - oy
+            var w = barWindow.cutW + root.borderSize + 2, h = barWindow.cutH + root.borderSize + 2
+            if (x < 0 || y < 0 || x > w || y > h) barWindow.peeking = false
+          } catch (e) {}
+        }
+      }
+    }
 
     ScreenMoveRemap {
       id: remapGuard
@@ -1412,7 +1470,10 @@ Item {
       // hovered while the pointer is over a widget, where a sibling would lose
       // hover to the section the pointer entered.
       HoverHandler {
-        onHoveredChanged: root.setBarHovered(hovered)
+        onHoveredChanged: {
+          barWindow.pillHovered = hovered
+          root.setBarHovered(hovered)
+        }
         // Unplugging a monitor destroys its bar without a leave event, which
         // would strand this surface's tally and hold the peek open for good.
         Component.onDestruction: if (hovered) root.setBarHovered(false)
