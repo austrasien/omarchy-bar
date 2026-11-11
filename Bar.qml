@@ -1328,15 +1328,18 @@ Item {
     readonly property real cutH: barWindow.overlayItem ? barWindow.overlayItem.y + barWindow.overlayItem.height : 0
     readonly property real cutR: barWindow.overlayItem ? barWindow.overlayItem.height / 2 : 0
     // The window the pill sits on: on this monitor's workspace, covering the
-    // point just past the cut's corner; the focused one first.
+    // point just past the cut's corner; the focused one first. A special
+    // workspace shown on the monitor (scratchpad) covers the regular one, so
+    // its windows are the ones under the pill.
     readonly property var cutWindow: {
       var m = barWindow.cutMonitor
       if (!root.overlay || !m || !m.activeWorkspace) return null
+      var wsId = m.specialWorkspace && m.specialWorkspace.id ? m.specialWorkspace.id : m.activeWorkspace.id
       var px = m.x + barWindow.cutW + root.borderSize + 2, py = m.y + barWindow.cutH + root.borderSize + 2
       var best = null
       for (var i = 0; i < root.hyprClients.length; i++) {
         var c = root.hyprClients[i]
-        if (!c.mapped || c.hidden || !c.workspace || c.workspace.id !== m.activeWorkspace.id) continue
+        if (!c.mapped || c.hidden || !c.workspace || c.workspace.id !== wsId) continue
         if (px < c.at[0] || py < c.at[1] || px > c.at[0] + c.size[0] || py > c.at[1] + c.size[1]) continue
         if (!best || c.focusHistoryID === 0) best = c
       }
