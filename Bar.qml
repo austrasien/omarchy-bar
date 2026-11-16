@@ -214,38 +214,46 @@ Item {
     }
     return null
   }
-  // Docked: every slot (bar module or tray drawer widget) is moved along the
-  // hidden bar so that its panel, centred on its icon, starts just right of
-  // the HUD widget. x is written directly (a transform would not reach the
-  // panel's anchor watcher); the layout is rebuilt when undocking.
-  property var dockCache: ({})     // moduleName -> { w, off }, kept on disk
+  // Docked: each slot (bar module or tray drawer widget) shifts its widget
+  // along the hidden bar so that the panel, centred on its icon, starts just
+  // right of the HUD widget. The shift is a binding on the slot's position,
+  // so a relayout (a panel opening changes a widget's width) is followed in
+  // the same frame, never corrected after the fact. alignDock() only measures
+  // each panel's width and where its icon sits in its widget, remembered on
+  // disk for the next time.
+  property var dockCache: ({})     // moduleName -> { w, off }
   FileView {
     id: dockCacheFile
     path: root.stateHome + "/omarchy/bar-dock-cache.json"
     printErrors: false
     onLoaded: { try { root.dockCache = JSON.parse(text()) || {} } catch (e) { root.dockCache = {} } }
   }
+  // Shift for a slot: `slotX` is the slot's x on screen without the shift;
+  // the other arguments are there to make the binding follow them.
+  function dockDXFor(name, slotX, cache, dockRight) {
+    if (!docked || position !== "top") return 0
+    var c = cache[name] || { w: Style.space(280), off: 16 }
+    return dockRight + Style.gapsOut + c.w / 2 - c.off - slotX
+  }
   function alignDock() {
     if (!docked || !hudDock || position !== "top") return
-    var gapX = Style.gapsOut
+    var changed = false
     for (var i = 0; i < moduleSlots.length; i++) {
       var slot = moduleSlots[i]
       if (!slot || !slot.activeItem) continue
-      var p = slot.mapToItem(null, 0, 0)
       var panel = findPanel(slot.activeItem, 0, true)
-      var c = dockCache[slot.moduleName] || { w: Style.space(280), off: slot.width / 2 }
-      if (panel && panel.anchorItem) {
-        var a = panel.anchorItem.mapToItem(null, 0, 0)
-        var seen = { w: Math.round(panel.contentWidth), off: Math.round(a.x + panel.anchorItem.width / 2 - p.x) }
-        var old = dockCache[slot.moduleName]
-        if (!old || old.w !== seen.w || old.off !== seen.off) {
-          dockCache[slot.moduleName] = seen
-          dockCacheFile.setText(JSON.stringify(dockCache))
-        }
-        c = seen
+      if (!panel || !panel.anchorItem) continue
+      var a = panel.anchorItem.mapToItem(slot.activeItem, 0, 0)
+      var seen = { w: Math.round(panel.contentWidth), off: Math.round(a.x + panel.anchorItem.width / 2) }
+      var old = dockCache[slot.moduleName]
+      if (!old || old.w !== seen.w || old.off !== seen.off) {
+        dockCache[slot.moduleName] = seen
+        changed = true
       }
-      var want = hudDock.right + gapX + c.w / 2 - c.off
-      if (Math.abs(p.x - want) > 0.5) slot.x += want - p.x
+    }
+    if (changed) {
+      dockCache = Object.assign({}, dockCache)
+      dockCacheFile.setText(JSON.stringify(dockCache))
     }
   }
   function resetDock() {}
@@ -2150,6 +2158,12 @@ Item {
 
     HoverHandler { id: moduleHover }
 
+    // Docked to the HUD: shift the widget so its panel opens beside the HUD.
+    readonly property real dockDX: {
+      void x; void (parent ? parent.x : 0); void (parent && parent.parent ? parent.parent.x : 0)
+      return root.docked ? root.dockDXFor(moduleName, mapToItem(null, 0, 0).x, root.dockCache, root.hudDock.right) : 0
+    }
+
 
     BorderSurface {
       visible: slot.dragSource
@@ -2166,6 +2180,8 @@ Item {
       active: !slot.qmlCustom && !slot.registered
       sourceComponent: slot.commandCustom ? customCommandModuleComponent : emptyModuleComponent
       anchors.fill: parent
+      anchors.leftMargin: slot.dockDX
+      anchors.rightMargin: -slot.dockDX
       opacity: slot.dragSource ? 0.22 : 1.0
       onLoaded: {
         slot.injectProps()
@@ -2178,6 +2194,8 @@ Item {
       active: slot.registered
       sourceComponent: slot.registered ? slot.registryComponent : null
       anchors.fill: parent
+      anchors.leftMargin: slot.dockDX
+      anchors.rightMargin: -slot.dockDX
       clip: false
       opacity: slot.dragSource ? 0.22 : 1.0
       onLoaded: {
@@ -2191,6 +2209,8 @@ Item {
       active: slot.qmlCustom
       source: slot.qmlCustom ? root.customModuleSource(slot.entry) : ""
       anchors.fill: parent
+      anchors.leftMargin: slot.dockDX
+      anchors.rightMargin: -slot.dockDX
       opacity: slot.dragSource ? 0.22 : 1.0
       onLoaded: {
         slot.injectProps()
