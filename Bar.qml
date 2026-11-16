@@ -1257,6 +1257,21 @@ Item {
       barHiddenProbe.running = true
     }
 
+    // `omarchy-shell omarchy.bar toggleWidget austraz.camguard`: the panel
+    // of a bar widget that has no IPC of its own.
+    function toggleWidget(id: string): string {
+      for (var i = 0; i < root.moduleSlots.length; i++) {
+        var slot = root.moduleSlots[i]
+        if (!slot || slot.moduleName !== id || !slot.activeItem) continue
+        var w = slot.activeItem
+        if (typeof w.toggle === "function") { w.toggle(); return "ok" }
+        if (typeof w.togglePanel === "function") { w.togglePanel(); return "ok" }
+        if (typeof w.open === "function") { w.open(); return "ok" }
+        return "no panel"
+      }
+      return "unknown"
+    }
+
     // `omarchy-shell omarchy.bar hudDock '{"right":470,"top":45}'`, or '' to undock.
     function hudDock(json: string): void {
       try { root.hudDock = json ? JSON.parse(json) : null } catch (e) { root.hudDock = null }
