@@ -188,57 +188,71 @@ Item {
   // The HUD wallpaper (austraz.hudwall) shows the bar's icons while the bar
   // is hidden, and asks for the widgets' panels to open beside its widget:
   // `hudDock` = { right, top } in logical pixels. While docked, the hidden
-  // bar poses as a left bar as wide as the HUD widget, so every panel opens
-  // to its right, and the icon a panel hangs from is moved so the panel's
-  // top meets the widget's top.
+  // top bar claims to end just above the HUD widget, so every panel's top
+  // lands on the widget's top from its first frame; and each icon is placed
+  // in advance so that the panel it opens, centred on it, starts right of
+  // the widget (each panel's width is remembered once seen).
   property var hudDock: null
   property string configPosition: "top"
   readonly property bool docked: barHidden && hudDock !== null
-  onDockedChanged: position = docked ? "left" : configPosition
-  function barSizeFor(screenName) { return docked ? hudDock.right : barSize }
+  onDockedChanged: if (docked) Qt.callLater(alignDock)
+  function barSizeFor(screenName) { return docked ? Math.max(0, hudDock.top - Style.gapsOut) : barSize }
 
   // The open panel under a widget, if any (KeyboardPanel or alike: it has a
   // drawnHeight and a cardOrigin), looked for down the widget's objects.
-  function findPanel(obj, depth) {
+  function findPanel(obj, depth, anyState) {
     if (!obj || depth > 7) return null
-    if (obj.drawnHeight !== undefined && obj.cardOrigin !== undefined && obj.open) return obj
+    if (obj.drawnHeight !== undefined && obj.cardOrigin !== undefined && (obj.open || anyState)) return obj
     if (obj.item && obj.item !== obj) {
-      var viaLoader = findPanel(obj.item, depth + 1)
+      var viaLoader = findPanel(obj.item, depth + 1, anyState)
       if (viaLoader) return viaLoader
     }
     var kids = obj.data || []
     for (var i = 0; i < kids.length; i++) {
-      var f = findPanel(kids[i], depth + 1)
+      var f = findPanel(kids[i], depth + 1, anyState)
       if (f) return f
     }
     return null
   }
-  // Docked: the slot (bar module or tray drawer widget) whose panel is open
-  // is moved so that the panel, centred on it, has its top at the HUD
-  // widget's top. Its y is written directly (a transform would not reach the
-  // panel's anchor watcher); the hidden layout is rebuilt when undocking.
-  property var dockSlot: null
+  // Docked: every slot (bar module or tray drawer widget) is moved along the
+  // hidden bar so that its panel, centred on its icon, starts just right of
+  // the HUD widget. x is written directly (a transform would not reach the
+  // panel's anchor watcher); the layout is rebuilt when undocking.
+  property var dockCache: ({})     // moduleName -> { w, off }, kept on disk
+  FileView {
+    id: dockCacheFile
+    path: root.stateHome + "/omarchy/bar-dock-cache.json"
+    printErrors: false
+    onLoaded: { try { root.dockCache = JSON.parse(text()) || {} } catch (e) { root.dockCache = {} } }
+  }
   function alignDock() {
-    if (!hudDock) return
+    if (!docked || !hudDock || position !== "top") return
+    var gapX = Style.gapsOut
     for (var i = 0; i < moduleSlots.length; i++) {
       var slot = moduleSlots[i]
       if (!slot || !slot.activeItem) continue
-      var panel = findPanel(slot.activeItem, 0)
-      if (!panel) continue
-      dockSlot = slot
       var p = slot.mapToItem(null, 0, 0)
-      var target = hudDock.top + panel.drawnHeight / 2 - slot.height / 2
-      if (Math.abs(p.y - target) > 0.5) slot.y += target - p.y
-      return
+      var panel = findPanel(slot.activeItem, 0, true)
+      var c = dockCache[slot.moduleName] || { w: Style.space(280), off: slot.width / 2 }
+      if (panel && panel.anchorItem) {
+        var a = panel.anchorItem.mapToItem(null, 0, 0)
+        var seen = { w: Math.round(panel.contentWidth), off: Math.round(a.x + panel.anchorItem.width / 2 - p.x) }
+        var old = dockCache[slot.moduleName]
+        if (!old || old.w !== seen.w || old.off !== seen.off) {
+          dockCache[slot.moduleName] = seen
+          dockCacheFile.setText(JSON.stringify(dockCache))
+        }
+        c = seen
+      }
+      var want = hudDock.right + gapX + c.w / 2 - c.off
+      if (Math.abs(p.x - want) > 0.5) slot.x += want - p.x
     }
-    dockSlot = null
   }
-  function resetDock() { dockSlot = null }
+  function resetDock() {}
   Timer {
-    interval: 80
+    interval: 250
     repeat: true
-    // Not every panel registers as the bar's active popout: while docked,
-    // look for any open one.
+    // Keep the icons in place while docked (the layout may move them).
     running: root.docked
     triggeredOnStart: true
     onTriggered: root.alignDock()
@@ -405,7 +419,7 @@ Item {
         itemVisible: slot.activeItem.visible === true,
         itemWidth: Math.round(slot.activeItem.implicitWidth || 0),
         itemHeight: Math.round(slot.activeItem.implicitHeight || 0),
-        dockPanel: (function() { var q = root.findPanel(slot.activeItem, 0); return q ? { h: q.drawnHeight, y: q.cardOrigin.y, ay: q.anchorScreenPos.y, pos: q.barPos, thick: q.barThickness } : null })(),
+        dockPanel: (function() { var q = root.findPanel(slot.activeItem, 0); return q ? { w: q.contentWidth, x: q.cardOrigin.x, y: q.cardOrigin.y, pos: q.barPos, thick: q.barThickness } : null })(),
       })
     }
     return out
@@ -616,7 +630,7 @@ Item {
     var config = Util.isPlainObject(barConfig) ? barConfig : fallbackBarConfig
 
     configPosition = normalizePosition(config.position)
-    position = docked ? "left" : configPosition
+    position = configPosition
     setRequestedTransparency(config.transparent === true)
     overlay = config.overlay === true
     centerAnchor = Util.canonicalWidgetId(config.centerAnchor || "")
