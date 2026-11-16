@@ -233,7 +233,8 @@ Item {
   function dockDXFor(name, slotX, cache, dockRight) {
     if (!docked || position !== "top") return 0
     var c = cache[name] || { w: Style.space(280), off: 16 }
-    return dockRight + Style.gapsOut + c.w / 2 - c.off - slotX
+    var gap = hudDock && hudDock.gap !== undefined ? hudDock.gap : Style.gapsOut
+    return dockRight + gap + c.w / 2 - c.off - slotX
   }
   function alignDock() {
     if (!docked || !hudDock || position !== "top") return
