@@ -185,6 +185,72 @@ Item {
   property bool centerHoverRevealSuppressed: false
   property int barConfigSerial: 0
   property string position: "top"
+  // The HUD wallpaper (austraz.hudwall) shows the bar's icons while the bar
+  // is hidden, and asks for the widgets' panels to open beside its widget:
+  // `hudDock` = { right, top } in logical pixels. While docked, the hidden
+  // bar poses as a left bar as wide as the HUD widget, so every panel opens
+  // to its right, and the icon a panel hangs from is moved so the panel's
+  // top meets the widget's top.
+  property var hudDock: null
+  property string configPosition: "top"
+  readonly property bool docked: barHidden && hudDock !== null
+  onDockedChanged: position = docked ? "left" : configPosition
+  function barSizeFor(screenName) { return docked ? hudDock.right : barSize }
+
+  // The open panel under a widget, if any (KeyboardPanel or alike: it has a
+  // drawnHeight and a cardOrigin), looked for down the widget's objects.
+  function findPanel(obj, depth) {
+    if (!obj || depth > 7) return null
+    if (obj.drawnHeight !== undefined && obj.cardOrigin !== undefined && obj.open) return obj
+    if (obj.item && obj.item !== obj) {
+      var viaLoader = findPanel(obj.item, depth + 1)
+      if (viaLoader) return viaLoader
+    }
+    var kids = obj.data || []
+    for (var i = 0; i < kids.length; i++) {
+      var f = findPanel(kids[i], depth + 1)
+      if (f) return f
+    }
+    return null
+  }
+  // Docked: the slot (bar module or tray drawer widget) whose panel is open
+  // is translated so that the panel, centred on it, has its top at the HUD
+  // widget's top.
+  property var dockSlot: null
+  property var dockShift: null
+  function alignDock() {
+    if (!hudDock) return
+    for (var i = 0; i < moduleSlots.length; i++) {
+      var slot = moduleSlots[i]
+      if (!slot || !slot.activeItem) continue
+      var panel = findPanel(slot.activeItem, 0)
+      if (!panel) continue
+      if (!dockShift) dockShift = Qt.createQmlObject("import QtQuick; Translate {}", root)
+      if (dockSlot !== slot) {
+        resetDock()
+        dockSlot = slot
+        slot.transform = [dockShift]
+      }
+      var p = slot.mapToItem(null, 0, 0)
+      var base = p.y - dockShift.y
+      var target = hudDock.top + panel.drawnHeight / 2 - slot.height / 2
+      if (Math.abs(p.y - target) > 0.5) dockShift.y = target - base
+      return
+    }
+  }
+  function resetDock() {
+    if (dockSlot) dockSlot.transform = []
+    dockSlot = null
+    if (dockShift) dockShift.y = 0
+  }
+  Timer {
+    interval: 60
+    repeat: true
+    running: root.docked && root.activePopout !== null
+    triggeredOnStart: true
+    onTriggered: root.alignDock()
+    onRunningChanged: if (!running) root.resetDock()
+  }
   // Resolves through fontconfig at paint time (Style.font.family defaults
   // to "monospace"), so changing the system font (via `omarchy-font-set`)
   // updates the bar without a reload.
@@ -345,7 +411,8 @@ Item {
         visible: slot.visible === true && slot.width > 0 && slot.height > 0,
         itemVisible: slot.activeItem.visible === true,
         itemWidth: Math.round(slot.activeItem.implicitWidth || 0),
-        itemHeight: Math.round(slot.activeItem.implicitHeight || 0)
+        itemHeight: Math.round(slot.activeItem.implicitHeight || 0),
+        dockPanel: !!root.findPanel(slot.activeItem, 0)
       })
     }
     return out
@@ -555,7 +622,8 @@ Item {
   function applyBarConfig() {
     var config = Util.isPlainObject(barConfig) ? barConfig : fallbackBarConfig
 
-    position = normalizePosition(config.position)
+    configPosition = normalizePosition(config.position)
+    position = docked ? "left" : configPosition
     setRequestedTransparency(config.transparent === true)
     overlay = config.overlay === true
     centerAnchor = Util.canonicalWidgetId(config.centerAnchor || "")
@@ -1172,6 +1240,11 @@ Item {
     // killing it here can swallow the result entirely.
     function syncHidden(): void {
       barHiddenProbe.running = true
+    }
+
+    // `omarchy-shell omarchy.bar hudDock '{"right":470,"top":45}'`, or '' to undock.
+    function hudDock(json: string): void {
+      try { root.hudDock = json ? JSON.parse(json) : null } catch (e) { root.hudDock = null }
     }
 
     function debugGeometry(): string {
@@ -2069,6 +2142,7 @@ Item {
     }
 
     HoverHandler { id: moduleHover }
+
 
     BorderSurface {
       visible: slot.dragSource
