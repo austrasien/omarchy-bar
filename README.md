@@ -1,4 +1,26 @@
-# Omarchy bar
+# austraz.bar
+
+A fork of Omarchy's bar plugin (`omarchy.bar`), made to work with the
+[HUD wallpaper](https://github.com/austrasien/omarchy-hudwall):
+
+- **Docked to the HUD**: while the bar is hidden and the HUD shows its
+  bar-icons widget, the bar poses as a left bar as wide as that widget, so a
+  widget's panel opens beside it, top-aligned, without a jump. The HUD sends
+  where through `omarchy-shell omarchy.bar hudDock '{"right":470,"top":45,"gap":16}'`
+  (`''` to undock); each panel's width is remembered in
+  `~/.local/state/omarchy/bar-dock-cache.json`.
+- **IPC `toggleWidget <id>`**: opens a bar widget's panel by plugin id.
+- **Overlay pill**: draws the wallpaper (a cached strip, or a video background
+  on OWE's clock) under a special workspace's window.
+
+Use [austraz.tray](https://github.com/austrasien/omarchy-tray) with it, so
+the tray's drawer follows the dock. MIT, as Omarchy (see `LICENSE`).
+
+The rest of this file is Omarchy's own README for the bar.
+
+---
+
+## Omarchy bar
 
 This is the Quickshell implementation of the Omarchy status bar. It is
 shipped as a first-party plugin of [`omarchy-shell`](../../README.md), the
