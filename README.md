@@ -7,6 +7,8 @@ A fork of Omarchy's bar plugin (`omarchy.bar`), made to work with the
   bar-icons widget, the bar poses as a left bar as wide as that widget, so a
   widget's panel opens beside it, top-aligned, without a jump. The HUD sends
   where through `omarchy-shell omarchy.bar hudDock '{"right":470,"top":45,"gap":16}'`
+  (a widget on the left; `"left"` instead of `"right"` for one on the right,
+  the panels then open left of it)
   (`''` to undock); each panel's width is remembered in
   `~/.local/state/omarchy/bar-dock-cache.json`.
 - **IPC `toggleWidget <id>`**: opens a bar widget's panel by plugin id.

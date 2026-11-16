@@ -187,7 +187,8 @@ Item {
   property string position: "top"
   // The HUD wallpaper (austraz.hudwall) shows the bar's icons while the bar
   // is hidden, and asks for the widgets' panels to open beside its widget:
-  // `hudDock` = { right, top } in logical pixels. While docked, the hidden
+  // `hudDock` = { right, top } in logical pixels (or { left, top } for a
+  // widget on the right: panels then open left of it). While docked, the hidden
   // top bar claims to end just above the HUD widget, so every panel's top
   // lands on the widget's top from its first frame; and each icon is placed
   // in advance so that the panel it opens, centred on it, starts right of
@@ -230,10 +231,14 @@ Item {
   }
   // Shift for a slot: `slotX` is the slot's x on screen without the shift;
   // the other arguments are there to make the binding follow them.
+  // With `hudDock.left` instead of `right`, the HUD widget is on the right
+  // and the panel ends just left of it.
   function dockDXFor(name, slotX, cache, dockRight) {
     if (!docked || position !== "top") return 0
     var c = cache[name] || { w: Style.space(280), off: 16 }
     var gap = hudDock && hudDock.gap !== undefined ? hudDock.gap : Style.gapsOut
+    if (hudDock && hudDock.left !== undefined)
+      return hudDock.left - gap - c.w / 2 - c.off - slotX
     return dockRight + gap + c.w / 2 - c.off - slotX
   }
   function alignDock() {
@@ -1273,7 +1278,7 @@ Item {
       return "unknown"
     }
 
-    // `omarchy-shell omarchy.bar hudDock '{"right":470,"top":45}'`, or '' to undock.
+    // `omarchy-shell omarchy.bar hudDock '{"right":470,"top":45}'` (or "left"), or '' to undock.
     function hudDock(json: string): void {
       try { root.hudDock = json ? JSON.parse(json) : null } catch (e) { root.hudDock = null }
     }
