@@ -214,10 +214,10 @@ Item {
     return null
   }
   // Docked: the slot (bar module or tray drawer widget) whose panel is open
-  // is translated so that the panel, centred on it, has its top at the HUD
-  // widget's top.
+  // is moved so that the panel, centred on it, has its top at the HUD
+  // widget's top. Its y is written directly (a transform would not reach the
+  // panel's anchor watcher); the hidden layout is rebuilt when undocking.
   property var dockSlot: null
-  property var dockShift: null
   function alignDock() {
     if (!hudDock) return
     for (var i = 0; i < moduleSlots.length; i++) {
@@ -225,28 +225,21 @@ Item {
       if (!slot || !slot.activeItem) continue
       var panel = findPanel(slot.activeItem, 0)
       if (!panel) continue
-      if (!dockShift) dockShift = Qt.createQmlObject("import QtQuick; Translate {}", root)
-      if (dockSlot !== slot) {
-        resetDock()
-        dockSlot = slot
-        slot.transform = [dockShift]
-      }
+      dockSlot = slot
       var p = slot.mapToItem(null, 0, 0)
-      var base = p.y - dockShift.y
       var target = hudDock.top + panel.drawnHeight / 2 - slot.height / 2
-      if (Math.abs(p.y - target) > 0.5) dockShift.y = target - base
+      if (Math.abs(p.y - target) > 0.5) slot.y += target - p.y
       return
     }
-  }
-  function resetDock() {
-    if (dockSlot) dockSlot.transform = []
     dockSlot = null
-    if (dockShift) dockShift.y = 0
   }
+  function resetDock() { dockSlot = null }
   Timer {
-    interval: 60
+    interval: 80
     repeat: true
-    running: root.docked && root.activePopout !== null
+    // Not every panel registers as the bar's active popout: while docked,
+    // look for any open one.
+    running: root.docked
     triggeredOnStart: true
     onTriggered: root.alignDock()
     onRunningChanged: if (!running) root.resetDock()
@@ -412,7 +405,7 @@ Item {
         itemVisible: slot.activeItem.visible === true,
         itemWidth: Math.round(slot.activeItem.implicitWidth || 0),
         itemHeight: Math.round(slot.activeItem.implicitHeight || 0),
-        dockPanel: !!root.findPanel(slot.activeItem, 0)
+        dockPanel: (function() { var q = root.findPanel(slot.activeItem, 0); return q ? { h: q.drawnHeight, y: q.cardOrigin.y, ay: q.anchorScreenPos.y, pos: q.barPos, thick: q.barThickness } : null })(),
       })
     }
     return out
